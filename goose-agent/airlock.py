@@ -25,6 +25,140 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PTC Airlock", version="0.1.0")
 
+_CHAT_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goose Agent (PTC Airlock)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e1e4e8; height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 16px 24px; border-bottom: 1px solid #2d333b; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb55; }
+  #messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .msg { max-width: 720px; padding: 12px 16px; border-radius: 12px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: #1f6feb; color: #fff; border-bottom-right-radius: 4px; }
+  .msg.assistant { align-self: flex-start; background: #21262d; border: 1px solid #30363d; border-bottom-left-radius: 4px; }
+  .msg.system { align-self: center; background: transparent; color: #8b949e; font-size: 12px; text-align: center; border: 1px solid #30363d; padding: 8px 16px; }
+  .msg .airlock-info { margin-top: 8px; padding-top: 8px; border-top: 1px solid #30363d; font-size: 12px; color: #8b949e; }
+  .msg .airlock-info span { color: #58a6ff; }
+  #input-area { padding: 16px 24px; border-top: 1px solid #2d333b; display: flex; gap: 8px; }
+  #input-area input[type=text] { flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363d; background: #161b22; color: #e1e4e8; font-size: 14px; outline: none; }
+  #input-area input[type=text]:focus { border-color: #1f6feb; }
+  #input-area button { padding: 10px 20px; border-radius: 8px; border: none; background: #238636; color: #fff; font-size: 14px; cursor: pointer; font-weight: 500; }
+  #input-area button:hover { background: #2ea043; }
+  #input-area button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  .setup { padding: 24px; max-width: 480px; margin: auto; }
+  .setup label { display: block; margin-bottom: 4px; font-size: 13px; color: #8b949e; }
+  .setup input { width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #e1e4e8; font-size: 14px; margin-bottom: 12px; }
+  .setup button { width: 100%; padding: 10px; border-radius: 8px; border: none; background: #1f6feb; color: #fff; font-size: 14px; cursor: pointer; }
+  .typing { color: #8b949e; font-style: italic; font-size: 13px; padding: 8px 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Goose Agent</h1>
+  <span class="badge">PTC Airlock</span>
+</header>
+
+<div id="setup-screen" class="setup">
+  <p style="margin-bottom:16px;color:#8b949e;font-size:14px;">Enter your identity and the airlock token to start chatting with Goose through the PTC airlock.</p>
+  <label for="s-identity">Your name</label>
+  <input type="text" id="s-identity" placeholder="e.g. jane" value="">
+  <label for="s-token">Airlock token</label>
+  <input type="text" id="s-token" placeholder="Paste the airlock token">
+  <button onclick="startChat()">Connect</button>
+</div>
+
+<div id="chat-screen" style="display:none;flex:1;flex-direction:column;">
+  <div id="messages">
+    <div class="msg system">Connected through the PTC airlock. Your messages pass through 9 security gates before reaching Goose. Ask about PTC/GAL, or request issue triage.</div>
+  </div>
+  <div id="input-area">
+    <input type="text" id="msg-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendMessage()">
+    <button id="send-btn" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script>
+let TOKEN = '', IDENTITY = '';
+
+function startChat() {
+  IDENTITY = document.getElementById('s-identity').value.trim();
+  TOKEN = document.getElementById('s-token').value.trim();
+  if (!IDENTITY || !TOKEN) { alert('Both fields are required.'); return; }
+  document.getElementById('setup-screen').style.display = 'none';
+  const cs = document.getElementById('chat-screen');
+  cs.style.display = 'flex';
+  document.getElementById('msg-input').focus();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('msg-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMsg('user', text);
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  const typing = document.createElement('div');
+  typing.className = 'typing';
+  typing.textContent = 'Goose is thinking...';
+  document.getElementById('messages').appendChild(typing);
+  typing.scrollIntoView({behavior:'smooth'});
+
+  try {
+    const resp = await fetch('/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Airlock-Token': TOKEN,
+        'X-Sender-Identity': IDENTITY,
+      },
+      body: JSON.stringify({message: text}),
+    });
+    typing.remove();
+    const data = await resp.json();
+    if (resp.ok && data.response) {
+      let clean = data.response;
+      if (clean.includes('goose is ready\\n')) clean = clean.split('goose is ready\\n').pop();
+      if (clean.includes('goose is ready')) clean = clean.split('goose is ready').pop();
+      clean = clean.replace(/^\\s*__\\(.*?L L\\s*/s, '').trim();
+      addMsg('assistant', clean, data.airlock);
+    } else if (data.detail) {
+      const d = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+      addMsg('system', 'Airlock: ' + d);
+    } else {
+      addMsg('system', 'Error: ' + JSON.stringify(data));
+    }
+  } catch (e) {
+    typing.remove();
+    addMsg('system', 'Network error: ' + e.message);
+  }
+  btn.disabled = false;
+  input.focus();
+}
+
+function addMsg(role, text, airlock) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  if (airlock) {
+    const info = document.createElement('div');
+    info.className = 'airlock-info';
+    info.innerHTML = 'Airlock: <span>' + airlock.gates_passed + ' gates passed</span> · sender: <span>' + airlock.sender_class + '</span> · provenance: <span>' + airlock.provenance_label + '</span>';
+    div.appendChild(info);
+  }
+  document.getElementById('messages').appendChild(div);
+  div.scrollIntoView({behavior:'smooth'});
+}
+</script>
+</body>
+</html>
+"""
+
 GOOSE_ACP_URL = os.environ.get("GOOSE_ACP_URL", "http://localhost:3284")
 AIRLOCK_TOKEN = os.environ.get("AIRLOCK_TOKEN", "")
 AIRLOCK_ZONE = "airlock-demo"
@@ -279,11 +413,9 @@ async def root():
     }
 
 @app.get("/chat")
-async def chat_usage():
-    return {
-        "error": "Use POST, not GET",
-        "usage": "curl -X POST /chat -H 'Content-Type: application/json' -H 'X-Airlock-Token: <token>' -H 'X-Sender-Identity: <name>' -d '{\"message\": \"your message\"}'",
-    }
+async def chat_ui():
+    from fastapi.responses import HTMLResponse  # noqa: PLC0415
+    return HTMLResponse(_CHAT_HTML)
 
 @app.get("/healthz")
 async def healthz():
