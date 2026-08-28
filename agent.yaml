@@ -47,7 +47,7 @@ agent:
 model:
   provider: ${MODEL_PROVIDER:-openai}
   endpoint: ${MODEL_ENDPOINT:-https://openrouter.ai/api/v1}
-  name: ${MODEL_NAME:-stealth/ox-alpha}
+  name: ${MODEL_NAME:-z-ai/glm-5.3-flash}
   temperature: 0.3
   max_tokens: 4096
 

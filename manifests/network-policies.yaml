@@ -1,25 +1,41 @@
+# Network policies for safe-triage-demo
+#
+# Label-based pod selection:
+#   Agent pods:  app.kubernetes.io/instance=safe-triage-agent (Helm chart label)
+#   Broker pods: app=broker
+#   Bridge pods: app=approval-bridge
+#
+# Note: OVN-Kubernetes evaluates egress AFTER Service DNAT, so DNS rules
+# target port 5353 (the backend pod port), not 53.
+---
+# 1. agent-egress: Agent pods can reach DNS, broker (8080 + 8081),
+#    and external HTTPS (443). Nothing else.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: agent-egress
   namespace: safe-triage-demo
+  labels:
+    app.kubernetes.io/part-of: safe-triage-demo
 spec:
   podSelector:
     matchLabels:
-      app: safe-triage-agent
+      app.kubernetes.io/instance: safe-triage-agent
   policyTypes:
     - Egress
   egress:
-    - to:
-        - podSelector: {}
-      ports:
+    - ports:
         - protocol: UDP
+          port: 5353
+        - protocol: TCP
           port: 5353
     - to:
         - podSelector:
             matchLabels:
               app: broker
       ports:
+        - protocol: TCP
+          port: 8080
         - protocol: TCP
           port: 8081
     - to:
@@ -29,11 +45,14 @@ spec:
         - protocol: TCP
           port: 443
 ---
+# 2. broker-egress: Broker can reach DNS and external HTTPS (GitHub API).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: broker-egress
   namespace: safe-triage-demo
+  labels:
+    app.kubernetes.io/part-of: safe-triage-demo
 spec:
   podSelector:
     matchLabels:
@@ -41,10 +60,10 @@ spec:
   policyTypes:
     - Egress
   egress:
-    - to:
-        - podSelector: {}
-      ports:
+    - ports:
         - protocol: UDP
+          port: 5353
+        - protocol: TCP
           port: 5353
     - to:
         - ipBlock:
@@ -53,11 +72,15 @@ spec:
         - protocol: TCP
           port: 443
 ---
+# 3. broker-ingress: Broker accepts from agent pods and bridge pods
+#    on both ports.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: broker-ingress
   namespace: safe-triage-demo
+  labels:
+    app.kubernetes.io/part-of: safe-triage-demo
 spec:
   podSelector:
     matchLabels:
@@ -68,7 +91,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: safe-triage-agent
+              app.kubernetes.io/instance: safe-triage-agent
         - podSelector:
             matchLabels:
               app: approval-bridge
@@ -78,11 +101,15 @@ spec:
         - protocol: TCP
           port: 8081
 ---
+# 4. bridge-egress: Bridge can reach DNS, broker (8080 + 8081),
+#    and external HTTPS (GitHub API).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: bridge-egress
   namespace: safe-triage-demo
+  labels:
+    app.kubernetes.io/part-of: safe-triage-demo
 spec:
   podSelector:
     matchLabels:
@@ -90,10 +117,10 @@ spec:
   policyTypes:
     - Egress
   egress:
-    - to:
-        - podSelector: {}
-      ports:
+    - ports:
         - protocol: UDP
+          port: 5353
+        - protocol: TCP
           port: 5353
     - to:
         - podSelector:
@@ -102,6 +129,8 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+        - protocol: TCP
+          port: 8081
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

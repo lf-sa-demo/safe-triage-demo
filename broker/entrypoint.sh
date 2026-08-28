@@ -23,6 +23,30 @@ else
     echo "WARNING: No GitHub App PEM found at /run/github-app/private-key.pem"
 fi
 
+echo "Starting token refresh loop (every 50 minutes)..."
+python3 -c "
+import time, os, sys
+sys.path.insert(0, '/app')
+from src.github_auth import GitHubAppAuth
+auth = GitHubAppAuth(
+    app_id=os.environ['GITHUB_APP_ID'],
+    private_key_path='/run/github-app/private-key.pem',
+    installation_id=os.environ['GITHUB_INSTALLATION_ID'],
+)
+while True:
+    try:
+        token = auth.get_installation_token()
+        tmp = '/tmp/connector-secrets/.rotate-token'
+        with open(tmp, 'w') as f:
+            f.write(token)
+        os.replace(tmp, '/tmp/connector-secrets/github-app-token')
+        print(f'[token-refresh] Token refreshed at {time.strftime(\"%H:%M:%S UTC\", time.gmtime())}', flush=True)
+    except Exception as e:
+        print(f'[token-refresh] ERROR: {e}', file=sys.stderr, flush=True)
+    time.sleep(3000)  # 50 minutes
+" &
+TOKEN_PID=$!
+
 echo "Starting broker HTTP server on :8080..."
 python3 -m safe_agents.broker.prototype.broker_server &
 BROKER_PID=$!
@@ -31,9 +55,9 @@ echo "Starting MCP HTTP gateway on :8081..."
 python3 -m src.gateway_http &
 GATEWAY_PID=$!
 
-# Wait for either to exit
-wait -n $BROKER_PID $GATEWAY_PID
+# Wait for any to exit
+wait -n $BROKER_PID $GATEWAY_PID $TOKEN_PID
 EXIT_CODE=$?
 echo "A process exited with code $EXIT_CODE, shutting down..."
-kill $BROKER_PID $GATEWAY_PID 2>/dev/null || true
+kill $BROKER_PID $GATEWAY_PID $TOKEN_PID 2>/dev/null || true
 exit $EXIT_CODE
