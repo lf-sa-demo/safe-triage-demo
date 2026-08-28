@@ -1,1 +1,1 @@
-# No external dependencies -- stdlib urllib only
+cryptography>=42.0

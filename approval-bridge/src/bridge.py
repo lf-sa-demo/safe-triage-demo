@@ -27,22 +27,31 @@ class ApprovalBridge:
     def __init__(
         self,
         broker_url: str,
-        github_token: str,
         owner: str,
         repo: str,
         poll_interval: int = 30,
+        *,
+        app_id: str,
+        private_key_path: str,
+        installation_id: str,
     ) -> None:
         self.broker_url = broker_url.rstrip("/")
-        self.github_token = github_token
         self.owner = owner
         self.repo = repo
         self.poll_interval = poll_interval
+
+        from .github_auth import GitHubAppAuth  # noqa: PLC0415
+        self._auth = GitHubAppAuth(app_id, private_key_path, installation_id)
 
         # intent_id -> {comment_id, issue_number, posted_at (ISO)}
         self._tracked: dict[str, dict[str, Any]] = {}
 
         # Cache org membership lookups for the lifetime of the process.
         self._org_member_cache: dict[str, bool] = {}
+
+    @property
+    def github_token(self) -> str:
+        return self._auth.get_installation_token()
 
     # ------------------------------------------------------------------
     # Main loop
@@ -432,10 +441,6 @@ def main() -> None:
         default=os.environ.get("BROKER_URL", "http://broker:8080"),
     )
     parser.add_argument(
-        "--github-token",
-        default=os.environ.get("GITHUB_TOKEN", ""),
-    )
-    parser.add_argument(
         "--owner",
         default=os.environ.get("GITHUB_OWNER", "lf-sa-demo"),
     )
@@ -448,19 +453,33 @@ def main() -> None:
         type=int,
         default=int(os.environ.get("POLL_INTERVAL", "30")),
     )
+    parser.add_argument(
+        "--app-id",
+        default=os.environ.get("GITHUB_APP_ID", ""),
+    )
+    parser.add_argument(
+        "--key-path",
+        default=os.environ.get("GITHUB_APP_KEY_PATH", "/run/github-app/private-key.pem"),
+    )
+    parser.add_argument(
+        "--installation-id",
+        default=os.environ.get("GITHUB_INSTALLATION_ID", ""),
+    )
 
     args = parser.parse_args()
 
-    if not args.github_token:
-        logger.error("GITHUB_TOKEN is required (env or --github-token)")
+    if not args.app_id or not args.installation_id:
+        logger.error("GITHUB_APP_ID and GITHUB_INSTALLATION_ID are required")
         sys.exit(1)
 
     bridge = ApprovalBridge(
         broker_url=args.broker_url,
-        github_token=args.github_token,
         owner=args.owner,
         repo=args.repo,
         poll_interval=args.poll_interval,
+        app_id=args.app_id,
+        private_key_path=args.key_path,
+        installation_id=args.installation_id,
     )
     bridge.run()
 

@@ -29,11 +29,16 @@ spec:
               value: "safe-triage-demo"
             - name: POLL_INTERVAL
               value: "30"
-            - name: GITHUB_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: github-app-token
-                  key: github-app-token
+            - name: GITHUB_APP_ID
+              value: "4745749"
+            - name: GITHUB_INSTALLATION_ID
+              value: "157149541"
+            - name: GITHUB_APP_KEY_PATH
+              value: "/run/github-app/private-key.pem"
+          volumeMounts:
+            - name: github-app-key
+              mountPath: /run/github-app
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -41,3 +46,7 @@ spec:
             limits:
               cpu: 200m
               memory: 256Mi
+      volumes:
+        - name: github-app-key
+          secret:
+            secretName: github-app-key
