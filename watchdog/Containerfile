@@ -1,0 +1,10 @@
+FROM python:3.12-slim
+WORKDIR /app
+COPY src/ /app/src/
+
+RUN useradd -r -u 1001 watchdog && \
+    chgrp -R 0 /app && chmod -R g=u /app
+USER 1001
+ENV HOME=/app
+
+CMD ["python", "-m", "src.campaign_watchdog"]

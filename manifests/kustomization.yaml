@@ -7,4 +7,5 @@ resources:
   - broker-buildconfig.yaml
   - broker-service.yaml
   - bridge-buildconfig.yaml
+  - watchdog-buildconfig.yaml
   - network-policies.yaml

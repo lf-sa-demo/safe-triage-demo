@@ -101,13 +101,27 @@ class ApprovalBridge:
                 continue
 
             if intent_id in self._tracked:
-                continue  # already posted
+                continue  # already posted this session
 
             issue_number = self._extract_issue_number(intent)
             if issue_number is None:
                 logger.warning(
                     "Cannot determine issue number from intent %s; skipping",
                     intent_id,
+                )
+                continue
+
+            # Check if a comment for this intent already exists (survives restarts)
+            existing = self._find_existing_approval_comment(issue_number, intent_id)
+            if existing is not None:
+                self._tracked[intent_id] = {
+                    "comment_id": existing,
+                    "issue_number": issue_number,
+                    "posted_at": "",
+                }
+                logger.info(
+                    "Found existing approval comment for intent %s on issue #%s (comment %s); skipping",
+                    intent_id, issue_number, existing,
                 )
                 continue
 
@@ -218,6 +232,24 @@ class ApprovalBridge:
 
         for intent_id in resolved:
             del self._tracked[intent_id]
+
+    def _find_existing_approval_comment(
+        self, issue_number: int, intent_id: str
+    ) -> int | None:
+        """Check if an approval comment for this intent already exists.
+        Returns the comment ID if found, None otherwise."""
+        url = (
+            f"{_GITHUB_API}/repos/{self.owner}/{self.repo}"
+            f"/issues/{issue_number}/comments?per_page=100"
+        )
+        try:
+            comments = self._github_get(url)
+        except Exception:
+            return None
+        for c in comments:
+            if intent_id in c.get("body", ""):
+                return c.get("id")
+        return None
 
     def _fetch_comments_since(
         self, issue_number: int, since_comment_id: int

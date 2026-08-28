@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: campaign-watchdog
+  namespace: safe-triage-demo
+  labels:
+    app: campaign-watchdog
+    app.kubernetes.io/part-of: safe-triage-demo
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: campaign-watchdog
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: watchdog
+              image: image-registry.openshift-image-registry.svc:5000/safe-triage-demo/campaign-watchdog:latest
+              env:
+                - name: AUDIT_PATH
+                  value: "/var/lib/broker/audit.jsonl"
+                - name: WINDOW_SECONDS
+                  value: "3600"
+                - name: MIN_TAINT_DENIALS
+                  value: "3"
+                - name: MIN_FAILED_OPS
+                  value: "5"
+              volumeMounts:
+                - name: broker-store
+                  mountPath: /var/lib/broker
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+          volumes:
+            - name: broker-store
+              persistentVolumeClaim:
+                claimName: broker-store
