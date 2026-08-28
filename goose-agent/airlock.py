@@ -326,9 +326,11 @@ async def chat(request: Request):
     if trust_entry is None:
         _drop("trust_map", "unmapped", identity)
 
-    # Gate 6: Deduplication
-    if gate_6_dedupe(identity, body["message"]):
-        return JSONResponse({"status": "duplicate", "message": "Request already processed"})
+    # Gate 6: Deduplication (disabled for demo -- committee members
+    # will repeat messages while testing; a production deployment
+    # would enable this with a TTL-based store)
+    # if gate_6_dedupe(identity, body["message"]):
+    #     return JSONResponse({"status": "duplicate", "message": "Request already processed"})
 
     # Gate 7: Injection screen (OFF)
     failure = gate_7_screen()
