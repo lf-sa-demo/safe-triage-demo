@@ -68,7 +68,7 @@ _CHAT_HTML = """<!DOCTYPE html>
   <label for="s-identity">Your name</label>
   <input type="text" id="s-identity" placeholder="e.g. jane" value="">
   <label for="s-token">Airlock token</label>
-  <input type="text" id="s-token" placeholder="Paste the airlock token">
+  <input type="text" id="s-token" placeholder="Paste the airlock token" value="__AIRLOCK_TOKEN__">
   <button onclick="startChat()">Connect</button>
 </div>
 
@@ -122,11 +122,7 @@ async function sendMessage() {
     typing.remove();
     const data = await resp.json();
     if (resp.ok && data.response) {
-      let clean = data.response;
-      if (clean.includes('goose is ready\\n')) clean = clean.split('goose is ready\\n').pop();
-      if (clean.includes('goose is ready')) clean = clean.split('goose is ready').pop();
-      clean = clean.replace(/^\\s*__\\(.*?L L\\s*/s, '').trim();
-      addMsg('assistant', clean, data.airlock);
+      addMsg('assistant', data.response, data.airlock);
     } else if (data.detail) {
       const d = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
       addMsg('system', 'Airlock: ' + d);
@@ -359,6 +355,21 @@ async def chat(request: Request):
         "GOOSE_MODE": "auto",
     }
 
+    system_context = (
+        "You are the Safe Triage Agent (Goose edition) for the lf-sa-demo/safe-triage-demo repository. "
+        "You have two roles: (1) Issue triage -- classify GitHub issues as bug/feature/question/docs, "
+        "assign priority high/medium/low, add labels via github_add_label, and post triage comments "
+        "via github_post_comment. If the broker returns pending_approval, explain the intent ID and "
+        "that a human must approve. (2) Demo operator -- explain PTC (Provenance & Trust Context: "
+        "tracks data provenance, taints turns on external reads, blocks writes without approval), "
+        "GAL (Grant & Autonomy Lifecycle: four-rung authority ladder, maker-checker ceremonies, "
+        "automatic demotion), the broker's 14-rule PDP, and the airlock's 9-gate inbound pipeline. "
+        "Be concise and professional. Committee members are senior engineers.\n\n"
+        f"The sender '{identity}' was classified as '{trust_entry['sender_class']}' "
+        f"with provenance label '{provenance['label']}' by the airlock.\n\n"
+        f"User message: {body['message']}"
+    )
+
     try:
         proc = await asyncio.to_thread(
             subprocess.run,
@@ -366,7 +377,7 @@ async def chat(request: Request):
                 "goose", "run",
                 "--with-extension", "stdio:python3 /app/broker_tools.py",
                 "--no-session",
-                "-t", body["message"],
+                "-t", system_context,
             ],
             capture_output=True,
             text=True,
@@ -376,6 +387,25 @@ async def chat(request: Request):
         goose_output = proc.stdout.strip() if proc.stdout else ""
         if proc.returncode != 0 and proc.stderr:
             logger.warning("Goose stderr: %s", proc.stderr[-500:])
+
+        # Strip the Goose ASCII banner from the output
+        if "goose is ready" in goose_output:
+            goose_output = goose_output.split("goose is ready", 1)[-1].strip()
+        # Strip tool call traces (lines starting with ▸)
+        lines = goose_output.split("\n")
+        cleaned = []
+        skip_block = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("▸ ") or stripped.startswith("── "):
+                skip_block = True
+                continue
+            if skip_block and not stripped:
+                skip_block = False
+                continue
+            if not skip_block:
+                cleaned.append(line)
+        goose_output = "\n".join(cleaned).strip()
 
         return {
             "response": goose_output or "(no response)",
@@ -415,7 +445,8 @@ async def root():
 @app.get("/chat")
 async def chat_ui():
     from fastapi.responses import HTMLResponse  # noqa: PLC0415
-    return HTMLResponse(_CHAT_HTML)
+    html = _CHAT_HTML.replace("__AIRLOCK_TOKEN__", AIRLOCK_TOKEN)
+    return HTMLResponse(html)
 
 @app.get("/healthz")
 async def healthz():
