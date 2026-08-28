@@ -265,6 +265,26 @@ async def chat(request: Request):
         )
 
 
+@app.get("/")
+async def root():
+    return {
+        "service": "PTC Airlock → Goose Agent",
+        "usage": "POST /chat with JSON body {\"message\": \"...\"} and headers X-Airlock-Token + X-Sender-Identity",
+        "endpoints": {
+            "POST /chat": "Send a message through the airlock to Goose",
+            "GET /healthz": "Health check",
+            "GET /stats": "Airlock gate statistics",
+            "GET /drops": "Drop records",
+        },
+    }
+
+@app.get("/chat")
+async def chat_usage():
+    return {
+        "error": "Use POST, not GET",
+        "usage": "curl -X POST /chat -H 'Content-Type: application/json' -H 'X-Airlock-Token: <token>' -H 'X-Sender-Identity: <name>' -d '{\"message\": \"your message\"}'",
+    }
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok", "component": "airlock"}
