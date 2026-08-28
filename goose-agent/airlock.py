@@ -119,15 +119,34 @@ async function sendMessage() {
       },
       body: JSON.stringify({message: text}),
     });
-    typing.remove();
     const data = await resp.json();
-    if (resp.ok && data.response) {
-      addMsg('assistant', data.response, data.airlock);
-    } else if (data.detail) {
-      const d = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+    if (!resp.ok) {
+      typing.remove();
+      const d = data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : JSON.stringify(data);
       addMsg('system', 'Airlock: ' + d);
-    } else {
-      addMsg('system', 'Error: ' + JSON.stringify(data));
+    } else if (data.job_id) {
+      // Poll for result
+      const jobId = data.job_id;
+      const airlock = data.airlock;
+      const poll = async () => {
+        try {
+          const jr = await fetch('/jobs/' + jobId);
+          const job = await jr.json();
+          if (job.status === 'done' || job.status === 'error') {
+            typing.remove();
+            addMsg('assistant', job.response || '(no response)', airlock);
+            btn.disabled = false;
+            input.focus();
+            return;
+          }
+        } catch(e) {}
+        setTimeout(poll, 2000);
+      };
+      poll();
+      return; // don't re-enable button yet
+    } else if (data.response) {
+      typing.remove();
+      addMsg('assistant', data.response, data.airlock);
     }
   } catch (e) {
     typing.remove();
@@ -162,6 +181,12 @@ AIRLOCK_ZONE = "airlock-demo"
 # In-memory stores (no DynamoDB/S3 needed for the demo)
 _dedupe_store: set[str] = set()
 _drop_log: list[dict[str, Any]] = []
+
+# Async job store for long-running Goose requests
+import threading  # noqa: E402
+import uuid as _uuid  # noqa: E402
+_jobs: dict[str, dict[str, Any]] = {}
+_jobs_lock = threading.Lock()
 
 
 class ChatRequest(BaseModel):
@@ -346,16 +371,11 @@ async def chat(request: Request):
         identity, trust_entry["sender_class"], provenance["label"],
     )
 
-    # Forward to Goose via CLI subprocess (goose run -t "message")
-    import asyncio  # noqa: PLC0415
+    # Launch Goose as a background job and return immediately.
+    # The chat UI polls GET /jobs/{id} for the result.
     import subprocess  # noqa: PLC0415
 
-    env = {
-        **os.environ,
-        "GOOSE_PROVIDER": os.environ.get("GOOSE_PROVIDER", "openrouter"),
-        "GOOSE_MODEL": os.environ.get("GOOSE_MODEL", "z-ai/glm-5.3-flash"),
-        "GOOSE_MODE": "auto",
-    }
+    job_id = str(_uuid.uuid4())[:8]
 
     system_context = (
         "You are the Safe Triage Agent (Goose edition) for the lf-sa-demo/safe-triage-demo repository. "
@@ -372,63 +392,76 @@ async def chat(request: Request):
         f"User message: {body['message']}"
     )
 
-    try:
-        proc = await asyncio.to_thread(
-            subprocess.run,
-            [
-                "goose", "run",
-                "--with-extension", "stdio:python3 /app/broker_tools.py",
-                "--no-session",
-                "-t", system_context,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env,
-        )
-        goose_output = proc.stdout.strip() if proc.stdout else ""
-        if proc.returncode != 0 and proc.stderr:
-            logger.warning("Goose stderr: %s", proc.stderr[-500:])
+    airlock_meta = {
+        "status": "accepted",
+        "sender": identity,
+        "sender_class": trust_entry["sender_class"],
+        "provenance_label": provenance["label"],
+        "gates_passed": 9,
+    }
 
-        # Strip the Goose ASCII banner from the output
-        if "goose is ready" in goose_output:
-            goose_output = goose_output.split("goose is ready", 1)[-1].strip()
-        # Strip tool call traces (lines starting with ▸)
-        lines = goose_output.split("\n")
-        cleaned = []
-        skip_block = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("▸ ") or stripped.startswith("── "):
-                skip_block = True
-                continue
-            if skip_block and not stripped:
-                skip_block = False
-                continue
-            if not skip_block:
-                cleaned.append(line)
-        goose_output = "\n".join(cleaned).strip()
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "running", "airlock": airlock_meta}
 
-        return {
-            "response": goose_output or "(no response)",
-            "airlock": {
-                "status": "accepted",
-                "sender": identity,
-                "sender_class": trust_entry["sender_class"],
-                "provenance_label": provenance["label"],
-                "gates_passed": 9,
-            },
+    def _run_goose():
+        env = {
+            **os.environ,
+            "GOOSE_PROVIDER": os.environ.get("GOOSE_PROVIDER", "openrouter"),
+            "GOOSE_MODEL": os.environ.get("GOOSE_MODEL", "z-ai/glm-5.3-flash"),
+            "GOOSE_MODE": "auto",
         }
-    except subprocess.TimeoutExpired:
-        return JSONResponse(
-            status_code=504,
-            content={"error": "goose_timeout", "detail": "Goose did not respond within 120s"},
-        )
-    except Exception as exc:
-        return JSONResponse(
-            status_code=502,
-            content={"error": "goose_error", "detail": str(exc)},
-        )
+        try:
+            proc = subprocess.run(
+                [
+                    "goose", "run",
+                    "--with-extension", "stdio:python3 /app/broker_tools.py",
+                    "--no-session",
+                    "-t", system_context,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=env,
+            )
+            output = proc.stdout.strip() if proc.stdout else ""
+            if proc.returncode != 0 and proc.stderr:
+                logger.warning("Goose stderr: %s", proc.stderr[-500:])
+
+            # Strip banner
+            if "goose is ready" in output:
+                output = output.split("goose is ready", 1)[-1].strip()
+            # Strip tool traces
+            lines = output.split("\n")
+            cleaned = []
+            skip = False
+            for line in lines:
+                s = line.strip()
+                if s.startswith(("▸ ", "── ")):
+                    skip = True
+                    continue
+                if skip and not s:
+                    skip = False
+                    continue
+                if not skip:
+                    cleaned.append(line)
+            output = "\n".join(cleaned).strip()
+
+            with _jobs_lock:
+                _jobs[job_id]["status"] = "done"
+                _jobs[job_id]["response"] = output or "(no response)"
+        except subprocess.TimeoutExpired:
+            with _jobs_lock:
+                _jobs[job_id]["status"] = "done"
+                _jobs[job_id]["response"] = "(Goose timed out after 5 minutes)"
+        except Exception as exc:
+            with _jobs_lock:
+                _jobs[job_id]["status"] = "error"
+                _jobs[job_id]["response"] = f"Error: {exc}"
+
+    thread = threading.Thread(target=_run_goose, daemon=True)
+    thread.start()
+
+    return {"job_id": job_id, "airlock": airlock_meta}
 
 
 @app.get("/")
@@ -449,6 +482,15 @@ async def chat_ui():
     from fastapi.responses import HTMLResponse  # noqa: PLC0415
     html = _CHAT_HTML.replace("__AIRLOCK_TOKEN__", AIRLOCK_TOKEN)
     return HTMLResponse(html)
+
+@app.get("/jobs/{job_id}")
+async def get_job(job_id: str):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
 
 @app.get("/healthz")
 async def healthz():
