@@ -235,35 +235,50 @@ class ApprovalBridge:
     # ------------------------------------------------------------------
 
     def _is_org_member(self, username: str) -> bool:
-        """Check whether *username* belongs to the lf-sa-demo org.
+        """Check whether *username* is authorized to approve actions.
 
-        Results are cached for the lifetime of the bridge process to avoid
-        hammering the GitHub API.
+        Tries two checks in order:
+        1. Org membership (GET /orgs/{org}/members/{user} -> 204)
+        2. Repo collaborator (GET /repos/{owner}/{repo}/collaborators/{user} -> 204)
+
+        The GitHub App token may lack org:members read permission, so the
+        collaborator check is the reliable fallback.
         """
         if username in self._org_member_cache:
             return self._org_member_cache[username]
 
+        is_authorized = False
+
+        # Try org membership first
         url = f"{_GITHUB_API}/orgs/{self.owner}/members/{username}"
         try:
             req = urllib.request.Request(url, headers=self._github_headers())
             with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:  # noqa: S310
-                is_member = resp.status == 204
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:
-                is_member = False
-            else:
-                logger.warning(
-                    "Org membership check for %s returned HTTP %s; treating as non-member",
-                    username,
-                    exc.code,
-                )
-                is_member = False
+                is_authorized = resp.status == 204
+        except urllib.error.HTTPError:
+            pass
         except Exception:
-            logger.exception("Org membership check failed for %s", username)
-            is_member = False
+            pass
 
-        self._org_member_cache[username] = is_member
-        return is_member
+        # Fall back to repo permission check (works with GitHub App tokens)
+        if not is_authorized:
+            url = f"{_GITHUB_API}/repos/{self.owner}/{self.repo}/collaborators/{username}/permission"
+            try:
+                req = urllib.request.Request(url, headers=self._github_headers())
+                with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:  # noqa: S310
+                    data = json.load(resp)
+                    perm = data.get("permission", "")
+                    is_authorized = perm in ("admin", "maintain", "write")
+            except urllib.error.HTTPError:
+                pass
+            except Exception:
+                pass
+
+        if not is_authorized:
+            logger.info("User %s is not an org member or repo collaborator", username)
+
+        self._org_member_cache[username] = is_authorized
+        return is_authorized
 
     # ------------------------------------------------------------------
     # Broker approve / reject / flag

@@ -163,14 +163,7 @@ def _run_fastapi_gateway(surface, port: int, runtime=None) -> None:
     # -- Intent management endpoints (for the approval bridge) --
 
     if runtime is not None:
-        class ApproveRequest(BaseModel):
-            approved_by: str
-
-        class RejectRequest(BaseModel):
-            rejected_by: str
-
-        class FlagRequest(BaseModel):
-            flagged_by: str
+        from fastapi import Body  # noqa: PLC0415
 
         @app.get("/intents")
         async def list_intents(status: str = "pending"):
@@ -226,9 +219,9 @@ def _run_fastapi_gateway(surface, port: int, runtime=None) -> None:
             return results
 
         @app.post("/intents/{intent_id}/approve")
-        async def approve_intent(intent_id: str, req: ApproveRequest):
+        async def approve_intent(intent_id: str, approved_by: str = Body(embed=True)):
             try:
-                result = runtime.approve_intent(intent_id, req.approved_by)
+                result = runtime.approve_intent(intent_id, approved_by)
                 return {
                     "status": "approved",
                     "intent_id": intent_id,
@@ -238,17 +231,17 @@ def _run_fastapi_gateway(surface, port: int, runtime=None) -> None:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         @app.post("/intents/{intent_id}/reject")
-        async def reject_intent(intent_id: str, req: RejectRequest):
+        async def reject_intent(intent_id: str, rejected_by: str = Body(embed=True)):
             try:
-                result = runtime.reject_intent(intent_id, req.rejected_by)
+                result = runtime.reject_intent(intent_id, rejected_by)
                 return {"status": "rejected", "intent_id": intent_id}
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         @app.post("/intents/{intent_id}/flag")
-        async def flag_intent(intent_id: str, req: FlagRequest):
+        async def flag_intent(intent_id: str, flagged_by: str = Body(embed=True)):
             try:
-                result = runtime.flag_intent(intent_id, req.flagged_by)
+                result = runtime.flag_intent(intent_id, flagged_by)
                 return {"status": "flagged", "intent_id": intent_id}
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
