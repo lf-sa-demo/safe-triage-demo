@@ -1,0 +1,24 @@
+FROM python:3.12-slim AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.12-slim
+WORKDIR /app
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY src/ /app/src/
+COPY manifest.yaml /app/manifest.yaml
+COPY entrypoint.sh /app/entrypoint.sh
+
+RUN useradd -r -u 1001 broker && \
+    chgrp -R 0 /app && chmod -R g=u /app && \
+    mkdir -p /var/lib/broker /var/lib/broker-grants /var/lib/broker-audit && \
+    chgrp -R 0 /var/lib/broker* && chmod -R g=u /var/lib/broker*
+
+USER 1001
+ENV HOME=/app
+EXPOSE 8080 8081
+
+ENTRYPOINT ["bash", "/app/entrypoint.sh"]

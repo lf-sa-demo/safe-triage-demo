@@ -1,0 +1,23 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: approval-bridge
+  namespace: safe-triage-demo
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: approval-bridge
+  namespace: safe-triage-demo
+spec:
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Containerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: approval-bridge:latest
+  triggers: []

@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broker
+  namespace: safe-triage-demo
+  labels:
+    app: broker
+    app.kubernetes.io/part-of: safe-triage-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: broker
+  template:
+    metadata:
+      labels:
+        app: broker
+    spec:
+      containers:
+        - name: broker
+          image: image-registry.openshift-image-registry.svc:5000/safe-triage-demo/safe-triage-broker:latest
+          imagePullPolicy: Always
+          ports:
+            - name: broker-http
+              containerPort: 8080
+              protocol: TCP
+            - name: mcp-gateway
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: BROKER_HOST
+              value: "0.0.0.0"
+            - name: BROKER_PORT
+              value: "8080"
+            - name: BROKER_STORE
+              value: "sqlite"
+            - name: BROKER_SQLITE_PATH
+              value: "/var/lib/broker/broker.db"
+            - name: BROKER_MANIFEST
+              value: "/app/manifest.yaml"
+            - name: BROKER_SECRETS
+              value: "dir"
+            - name: BROKER_SECRETS_DIR
+              value: "/tmp/connector-secrets"
+            - name: BROKER_AUDIT_PATH
+              value: "/var/lib/broker/audit.jsonl"
+            - name: BROKER_GRANT_LOAD
+              value: "read"
+            - name: BROKER_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: broker-hmac
+                  key: hmac-key
+            - name: GATEWAY_PORT
+              value: "8081"
+            - name: GITHUB_OWNER
+              value: "lf-sa-demo"
+            - name: GITHUB_REPO
+              value: "safe-triage-demo"
+            - name: GITHUB_APP_ID
+              value: "4745749"
+            - name: GITHUB_INSTALLATION_ID
+              value: "157149541"
+          volumeMounts:
+            - name: broker-store
+              mountPath: /var/lib/broker
+            - name: github-app-key
+              mountPath: /run/github-app
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /registry
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: broker-store
+          persistentVolumeClaim:
+            claimName: broker-store
+        - name: github-app-key
+          secret:
+            secretName: github-app-key

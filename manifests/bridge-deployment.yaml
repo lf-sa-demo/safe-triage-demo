@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: approval-bridge
+  namespace: safe-triage-demo
+  labels:
+    app: approval-bridge
+    app.kubernetes.io/part-of: safe-triage-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: approval-bridge
+  template:
+    metadata:
+      labels:
+        app: approval-bridge
+    spec:
+      containers:
+        - name: bridge
+          image: image-registry.openshift-image-registry.svc:5000/safe-triage-demo/approval-bridge:latest
+          imagePullPolicy: Always
+          env:
+            - name: BROKER_URL
+              value: "http://broker:8080"
+            - name: GITHUB_OWNER
+              value: "lf-sa-demo"
+            - name: GITHUB_REPO
+              value: "safe-triage-demo"
+            - name: POLL_INTERVAL
+              value: "30"
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-app-token
+                  key: github-app-token
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

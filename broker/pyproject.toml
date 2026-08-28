@@ -1,0 +1,10 @@
+[project]
+name = "safe-triage-broker"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "safe-agents[mcp] @ git+https://github.com/wjatx/ptc-gal-reference.git@main",
+    "cryptography>=42.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]

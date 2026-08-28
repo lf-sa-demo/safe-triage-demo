@@ -1,0 +1,17 @@
+{
+  "generator": {
+    "tool": "fips-agents-cli",
+    "version": "0.17.1"
+  },
+  "template": {
+    "url": "https://github.com/fips-agents/agent-template",
+    "type": "agent",
+    "commit": "12f4a67943f9",
+    "full_commit": "12f4a67943f98f440d5321c733a21c03aeb393d8",
+    "subdir": "templates/agent-loop"
+  },
+  "project": {
+    "name": "safe-triage-demo",
+    "created_at": "2026-08-28T02:49:52.609846+00:00"
+  }
+}

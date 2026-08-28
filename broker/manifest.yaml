@@ -1,0 +1,46 @@
+principal:
+  agentId: safe-triage-agent
+  skill: triage
+  user: lf-sa-demo
+  tier: B
+
+grant_classes:
+  - github.list_issues
+  - github.read_issue
+  - github.add_label
+  - github.post_comment
+
+connectors:
+  - github
+
+connector_providers:
+  github: "src.github_connector:GitHubTriageConnector"
+
+connector_secrets:
+  github: github-app-token
+
+connector_auth:
+  github:
+    strategy: static_secret
+
+tool_ops:
+  - {tool: github, op: list_issues, effect: read, external: true}
+  - {tool: github, op: read_issue, effect: read, external: true}
+  - {tool: github, op: add_label, effect: write, external: true, reversible: true}
+  - {tool: github, op: post_comment, effect: write, external: true, reversible: false}
+
+counter_period: utc-day
+
+envelope:
+  polarity: act
+  caps:
+    actions_per_utc_day: 200
+  allowlists:
+    tools:
+      - github.list_issues
+      - github.read_issue
+      - github.add_label
+      - github.post_comment
+  high_stakes: false
+  approval_queue:
+    max_pending_per_op_day: 50

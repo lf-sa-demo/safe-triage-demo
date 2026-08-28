@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY src/ /app/src/
+
+RUN useradd -r -u 1001 bridge && \
+    chgrp -R 0 /app && chmod -R g=u /app
+USER 1001
+ENV HOME=/app
+
+CMD ["python", "-m", "src.bridge"]
