@@ -22,7 +22,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: BROKER_URL
-              value: "http://broker:8080"
+              value: "http://broker-gateway:8081"
             - name: GITHUB_OWNER
               value: "lf-sa-demo"
             - name: GITHUB_REPO

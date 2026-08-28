@@ -270,10 +270,8 @@ class ApprovalBridge:
     # ------------------------------------------------------------------
 
     def _approve_intent(self, intent_id: str, approved_by: str) -> None:
-        url = f"{self.broker_url}/approve"
-        payload = json.dumps(
-            {"intent_id": intent_id, "approved_by": approved_by}
-        ).encode()
+        url = f"{self.broker_url}/intents/{intent_id}/approve"
+        payload = json.dumps({"approved_by": approved_by}).encode()
         try:
             self._broker_post(url, payload)
             logger.info(
@@ -283,10 +281,8 @@ class ApprovalBridge:
             logger.exception("Failed to approve intent %s", intent_id)
 
     def _reject_intent(self, intent_id: str, rejected_by: str) -> None:
-        url = f"{self.broker_url}/reject"
-        payload = json.dumps(
-            {"intent_id": intent_id, "rejected_by": rejected_by}
-        ).encode()
+        url = f"{self.broker_url}/intents/{intent_id}/reject"
+        payload = json.dumps({"rejected_by": rejected_by}).encode()
         try:
             self._broker_post(url, payload)
             logger.info(
@@ -296,10 +292,8 @@ class ApprovalBridge:
             logger.exception("Failed to reject intent %s", intent_id)
 
     def _flag_intent(self, intent_id: str, flagged_by: str) -> None:
-        url = f"{self.broker_url}/flag"
-        payload = json.dumps(
-            {"intent_id": intent_id, "flagged_by": flagged_by}
-        ).encode()
+        url = f"{self.broker_url}/intents/{intent_id}/flag"
+        payload = json.dumps({"flagged_by": flagged_by}).encode()
         try:
             self._broker_post(url, payload)
             logger.info(
