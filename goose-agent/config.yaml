@@ -1,0 +1,13 @@
+GOOSE_PROVIDER: openrouter
+GOOSE_MODEL: z-ai/glm-5.3-flash
+GOOSE_MODE: auto
+GOOSE_MAX_TURNS: 50
+
+extensions:
+  broker-tools:
+    type: stdio
+    name: broker-tools
+    enabled: true
+    cmd: python3
+    args: ["/app/broker_tools.py"]
+    timeout: 60

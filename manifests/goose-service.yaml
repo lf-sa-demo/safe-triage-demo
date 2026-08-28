@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: goose-airlock
+  namespace: safe-triage-demo
+  labels:
+    app: goose-agent
+spec:
+  selector:
+    app: goose-agent
+  ports:
+    - name: airlock
+      port: 8082
+      targetPort: 8082

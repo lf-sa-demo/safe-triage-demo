@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: goose-agent
+  namespace: safe-triage-demo
+  labels:
+    app: goose-agent
+    app.kubernetes.io/part-of: safe-triage-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: goose-agent
+  template:
+    metadata:
+      labels:
+        app: goose-agent
+    spec:
+      containers:
+        - name: goose
+          image: image-registry.openshift-image-registry.svc:5000/safe-triage-demo/goose-agent:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3284
+              name: goose-acp
+            - containerPort: 8082
+              name: airlock
+          env:
+            - name: BROKER_URL
+              value: "http://broker:8080"
+            - name: GOOSE_PROVIDER
+              value: "openrouter"
+            - name: GOOSE_MODEL
+              value: "z-ai/glm-5.3-flash"
+            - name: GOOSE_MODE
+              value: "auto"
+            - name: GOOSE_SECRET_KEY
+              value: "demo-goose-secret"
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openrouter-api-key
+                  key: OPENAI_API_KEY
+            - name: AIRLOCK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: airlock-token
+                  key: token
+            - name: AIRLOCK_PORT
+              value: "8082"
+            - name: GOOSE_ACP_URL
+              value: "http://localhost:3284"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

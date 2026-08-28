@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: goose-airlock
+  namespace: safe-triage-demo
+  labels:
+    app: goose-agent
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: goose-airlock
+  port:
+    targetPort: airlock
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

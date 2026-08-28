@@ -4,6 +4,7 @@
 #   Agent pods:  app.kubernetes.io/instance=safe-triage-agent (Helm chart label)
 #   Broker pods: app=broker
 #   Bridge pods: app=approval-bridge
+#   Goose pods:  app=goose-agent
 #
 # Note: OVN-Kubernetes evaluates egress AFTER Service DNAT, so DNS rules
 # target port 5353 (the backend pod port), not 53.
@@ -72,8 +73,8 @@ spec:
         - protocol: TCP
           port: 443
 ---
-# 3. broker-ingress: Broker accepts from agent pods and bridge pods
-#    on both ports.
+# 3. broker-ingress: Broker accepts from agent pods, bridge pods,
+#    and goose-agent pods on both ports.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -95,6 +96,9 @@ spec:
         - podSelector:
             matchLabels:
               app: approval-bridge
+        - podSelector:
+            matchLabels:
+              app: goose-agent
       ports:
         - protocol: TCP
           port: 8080
@@ -131,6 +135,41 @@ spec:
           port: 8080
         - protocol: TCP
           port: 8081
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# 5. goose-egress: Goose agent can reach DNS, broker (8080),
+#    and external HTTPS (OpenRouter 443).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: goose-egress
+  namespace: safe-triage-demo
+  labels:
+    app.kubernetes.io/part-of: safe-triage-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: goose-agent
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
+    - to:
+        - podSelector:
+            matchLabels:
+              app: broker
+      ports:
+        - protocol: TCP
+          port: 8080
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
